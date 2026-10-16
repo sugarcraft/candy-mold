@@ -1,0 +1,92 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App;
+
+use SugarCraft\Core\Cmd;
+use SugarCraft\Core\KeyType;
+use SugarCraft\Core\Model;
+use SugarCraft\Core\Msg;
+use SugarCraft\Core\Msg\KeyMsg;
+use SugarCraft\Sprinkles\Border;
+use SugarCraft\Sprinkles\Style;
+
+/**
+ * Demo Model — a counter you can drive with ↑ / ↓ and quit with `q`.
+ *
+ * Picked deliberately as the "hello, world" of TUI development: small
+ * enough to read in one screen, but exercises every piece of the
+ * runtime: Model immutability, Msg dispatch, Cmd::quit() shutdown,
+ * keyboard handling, and CandySprinkles styling in view().
+ *
+ * The Model is immutable — `update()` returns a *new* Counter
+ * rather than mutating $n. This is the Elm-architecture pattern
+ * SugarCraft is built on: state lives in value objects, transitions
+ * are pure functions, side effects (timers, HTTP, file I/O) get
+ * scheduled as Cmds.
+ *
+ * To extend:
+ *   1. Add a field to the constructor (e.g. `int $step = 1`).
+ *   2. Add a Msg handler in update() that returns a new Model with
+ *      the field updated.
+ *   3. Reflect the new state in view().
+ */
+final class Counter implements Model
+{
+    public function __construct(public readonly int $n = 0) {}
+
+    public function init(): ?\Closure
+    {
+        return null;
+    }
+
+    public function update(Msg $msg): array
+    {
+        if ($msg instanceof KeyMsg === false) {
+            return [$this, null];
+        }
+        // Mirrors charmbracelet/bubbletea-app-template/Program.update
+        // quit with q (plain), Esc, or ctrl+c
+        if ($this->shouldQuit($msg)) {
+            return [$this, Cmd::quit()];
+        }
+        return [match ($msg->type) {
+            KeyType::Up   => new self($this->n + 1),
+            KeyType::Down => new self($this->n - 1),
+            default       => $this,
+        }, null];
+    }
+
+    // Returns a plain string here; the Model contract also allows a View
+    // (cursor pos, window title, alt-screen) — see SugarCraft\Core\View.
+    public function view(): string
+    {
+        $body = sprintf("  count: %d  \n  ↑ ↓ to change · q to quit  ", $this->n);
+        return Style::new()
+            ->border(Border::rounded())
+            ->padding(1, 2)
+            ->render($body);
+    }
+
+    public function subscriptions(): ?\SugarCraft\Core\Subscriptions
+    {
+        return null;
+    }
+
+    /** Determines if the given key message should trigger program quit. */
+    private function shouldQuit(KeyMsg $msg): bool
+    {
+        // quit with q (plain, no modifiers), Esc, or ctrl+c
+        if ($msg->type === KeyType::Char && $msg->rune === 'q' && $msg->ctrl === false) {
+            return true;
+        }
+        if ($msg->type === KeyType::Escape) {
+            return true;
+        }
+        if ($msg->ctrl && $msg->rune === 'c') {
+            return true;
+        }
+        return false;
+    }
+}
